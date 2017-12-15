@@ -20,6 +20,7 @@ var mu = &sync.Mutex{}
 // Certer defines the interface that must be implemented by any struct that deals with certificates.
 type Certer interface {
 	Put(w http.ResponseWriter, req *http.Request) (string, error)
+	Delete(w http.ResponseWriter, req *http.Request) (error)
 	PutCert(certName string, certContent []byte) (string, error)
 	GetAll(w http.ResponseWriter, req *http.Request) (CertResponse, error)
 	Init() error
@@ -69,6 +70,9 @@ func (m *cert) PutCert(certName string, certContent []byte) (string, error) {
 	return m.writeFile(certName, certContent)
 }
 
+func (m *cert) DeleteCert(certName string) (error) {
+	return m.deleteFile(certName)
+}
 // Put adds a certificate to the proxy.
 // If a certificate with the same name already exists, it will be overwritten by the new certificate.
 func (m *cert) Put(w http.ResponseWriter, req *http.Request) (string, error) {
@@ -95,6 +99,32 @@ func (m *cert) Put(w http.ResponseWriter, req *http.Request) (string, error) {
 	m.writeOK(w, msg)
 
 	return path, nil
+}
+
+func (m *cert) Delete(w http.ResponseWriter, req *http.Request) ( error) {
+	distribute, _ := strconv.ParseBool(req.URL.Query().Get("distribute"))
+	if distribute {
+		return m.sendDistributeRequests(w, req)
+	}
+	certName, err := m.getCertNameFromRequest(w, req)
+	if err != nil { // TODO: Test
+		m.writeError(w, err)
+		return  err
+	}
+
+	err = m.DeleteCert(certName)
+	if err != nil {
+		m.writeError(w, err)
+		return  err
+	}
+
+	proxy.Instance.CreateConfigFromTemplates()
+	proxy.Instance.Reload()
+
+	msg := CertResponse{Status: "OK", Message: ""}
+	m.writeOK(w, msg)
+
+	return  nil
 }
 
 // Init should be executed when the proxy starts.
@@ -152,7 +182,16 @@ func (m *cert) getCertFromRequest(w http.ResponseWriter, req *http.Request) (cer
 	}
 	return certName, certContent, nil
 }
+func (m *cert) getCertNameFromRequest(w http.ResponseWriter, req *http.Request) (certName string,  err error) {
+	certName = req.URL.Query().Get("certName")
+	if len(certName) == 0 { // TODO: Test
+		err := fmt.Errorf("Query parameter certName is mandatory")
+		return "",  err
+	}
+	defer func() { req.Body.Close() }()
 
+	return certName, nil
+}
 func (m *cert) sendDistributeRequests(w http.ResponseWriter, req *http.Request) error {
 	_, port, err := net.SplitHostPort(req.URL.Host)
 	if err != nil {
@@ -180,6 +219,16 @@ func (m *cert) writeFile(certName string, certContent []byte) (path string, err 
 	return path, nil
 }
 
+func (m *cert) deleteFile(certName string) ( err error) {
+	mu.Lock()
+	defer mu.Unlock()
+	err = os.Remove(fmt.Sprintf("%s/%s", m.CertsDir, certName))
+	if err != nil {
+		return  err
+	}
+
+	return  nil
+}
 func (m *cert) writeOK(w http.ResponseWriter, msg interface{}) {
 	httpWriterSetContentType(w, "application/json")
 	w.WriteHeader(http.StatusOK)

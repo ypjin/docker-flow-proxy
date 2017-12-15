@@ -60,6 +60,7 @@ func (m *serve) Execute(args []string) error {
 	logPrintf(`Starting "Docker Flow: Proxy"`)
 	r := mux.NewRouter().StrictSlash(true)
 	r.HandleFunc("/v1/docker-flow-proxy/cert", m.certPutHandler).Methods("PUT")
+        r.HandleFunc("/v1/docker-flow-proxy/cert", m.certDeleteHandler).Methods("DELETE")
 	r.HandleFunc("/v1/docker-flow-proxy/certs", m.certsHandler)
 	r.HandleFunc("/v1/docker-flow-proxy/config", config.Get)
 	r.HandleFunc("/v1/docker-flow-proxy/metrics", sm.Get)
@@ -113,6 +114,11 @@ func (m *serve) reconfigure(server server.Server) error {
 func (m *serve) certPutHandler(w http.ResponseWriter, req *http.Request) {
 	cert.Put(w, req)
 }
+
+func (m *serve) certDeleteHandler(w http.ResponseWriter, req *http.Request) {
+	cert.Delete(w, req)
+}
+
 
 // TODO: Move to server package
 func (m *serve) certsHandler(w http.ResponseWriter, req *http.Request) {
